@@ -2,6 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { healthz, readiness } from "@/lib/api/system";
+import {
+  isDemoModeEnabled,
+  onDemoModeChange,
+  setDemoModeEnabled,
+} from "@/lib/demo/mode";
 
 type Status = "unknown" | "ok" | "degraded" | "down";
 
@@ -36,6 +41,7 @@ function Pill({
 export function ServiceStatusBar() {
   const [healthStatus, setHealthStatus] = useState<Status>("unknown");
   const [readinessStatus, setReadinessStatus] = useState<Status>("unknown");
+  const [demo, setDemo] = useState(false);
   const [meta, setMeta] = useState<{
     twilioConfigured?: boolean;
     tavilyConfigured?: boolean;
@@ -75,13 +81,16 @@ export function ServiceStatusBar() {
   }
 
   useEffect(() => {
+    setDemo(isDemoModeEnabled());
     refresh();
     const interval = window.setInterval(refresh, 45_000);
     const onFocus = () => refresh();
+    const off = onDemoModeChange(() => setDemo(isDemoModeEnabled()));
     window.addEventListener("focus", onFocus);
     return () => {
       window.clearInterval(interval);
       window.removeEventListener("focus", onFocus);
+      off();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -92,6 +101,7 @@ export function ServiceStatusBar() {
         <div className="flex flex-wrap items-center gap-2">
           <Pill label="API health" status={healthStatus} />
           <Pill label="Readiness" status={readinessStatus} />
+          <Pill label={`Demo: ${demo ? "on" : "off"}`} status={demo ? "degraded" : "ok"} />
           <div className="hidden sm:flex sm:items-center sm:gap-2">
             <Pill
               label={`Twilio: ${meta.twilioConfigured ? "on" : "off"}`}
@@ -116,6 +126,20 @@ export function ServiceStatusBar() {
 
       {expanded && (
         <div className="rounded-lg border border-zinc-200 bg-white p-3 text-xs text-zinc-700 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200">
+          <div className="flex items-center justify-between gap-3">
+            <div className="font-medium">Demo mode</div>
+            <button
+              type="button"
+              className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1 text-xs font-medium text-zinc-800 hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900/40 dark:text-zinc-100 dark:hover:bg-zinc-900"
+              onClick={() => setDemoModeEnabled(!demo)}
+            >
+              Turn {demo ? "off" : "on"}
+            </button>
+          </div>
+          <div className="mt-1 text-zinc-600 dark:text-zinc-400">
+            When enabled, the UI uses mocked responses so you can demo without a deployed backend.
+          </div>
+
           <div className="font-medium">Degraded components</div>
           <div className="mt-1">
             {(meta.degradedComponents?.length || 0) > 0

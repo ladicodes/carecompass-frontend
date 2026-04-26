@@ -78,7 +78,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </span>
           <a
             className="underline underline-offset-2 hover:text-zinc-900 dark:hover:text-zinc-200"
-            href="http://127.0.0.1:8000/openapi.json"
+            href={`${process.env.NEXT_PUBLIC_CARECOMPASS_API_URL || "http://127.0.0.1:8000"}/openapi.json`}
             target="_blank"
             rel="noreferrer"
           >
