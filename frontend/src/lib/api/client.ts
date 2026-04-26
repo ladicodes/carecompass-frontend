@@ -21,7 +21,6 @@ export class ApiError extends Error {
 }
 
 let lastRequestId: string | null = null;
-let didAutoEnableDemo = false;
 
 function makeRequestId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -34,64 +33,6 @@ function apiBaseUrl() {
   const raw =
     process.env.NEXT_PUBLIC_CARECOMPASS_API_URL || "http://127.0.0.1:8000";
   return raw.replace(/\/+$/, "");
-}
-
-async function maybeMock<T>(path: string, init?: RequestInit): Promise<T | null> {
-  const { isDemoModeEnabled, setDemoModeEnabled } = await import("@/lib/demo/mode");
-  if (!isDemoModeEnabled()) return null;
-
-  const { mockHealthz, mockPinRisk, mockPolicyDeserts, mockReadiness, mockTriageAnalyze, mockTriageMatch } =
-    await import("@/lib/demo/mocks");
-
-  const normalized = path.startsWith("/") ? path : `/${path}`;
-
-  if (normalized === "/healthz") return mockHealthz() as T;
-  if (normalized === "/readiness") return mockReadiness() as T;
-
-  if (normalized === "/triage/analyze") {
-    let symptoms = "";
-    try {
-      if (typeof init?.body === "string") {
-        const parsed = JSON.parse(init.body) as any;
-        symptoms = String(parsed?.symptoms_text || "");
-      }
-    } catch {
-      // ignore
-    }
-    return mockTriageAnalyze(symptoms) as T;
-  }
-
-  if (normalized === "/triage/match_facilities") {
-    let topK = 10;
-    let stateHint: string | null | undefined = null;
-    try {
-      if (typeof init?.body === "string") {
-        const parsed = JSON.parse(init.body) as any;
-        topK = Number(parsed?.top_k ?? 10);
-        stateHint = parsed?.state_hint ?? null;
-      }
-    } catch {
-      // ignore
-    }
-    return mockTriageMatch(topK, stateHint) as T;
-  }
-
-  if (normalized.startsWith("/policy/deserts")) {
-    const u = new URL(`http://local${normalized}`);
-    const specialty = u.searchParams.get("specialty") || "emergency";
-    const level = u.searchParams.get("level") || "pin";
-    return mockPolicyDeserts({ specialty, level }) as T;
-  }
-
-  if (normalized.startsWith("/policy/pin-risk/")) {
-    const pin = normalized.split("/").pop() || "000000";
-    return mockPinRisk(pin) as T;
-  }
-
-  // If a route isn't mocked, keep demo on but let caller see failure.
-  // Still, if we got here via auto-enable, callers will see consistent UI for core routes.
-  setDemoModeEnabled(true);
-  return null;
 }
 
 async function readJsonSafe(res: Response) {
@@ -108,9 +49,6 @@ export async function requestJson<T>(
   path: string,
   init?: RequestInit & { requestId?: string },
 ): Promise<T> {
-  const preMock = await maybeMock<T>(path, init);
-  if (preMock !== null) return preMock;
-
   const requestId = init?.requestId || lastRequestId || makeRequestId();
   lastRequestId = requestId;
 
@@ -119,23 +57,10 @@ export async function requestJson<T>(
   headers.set("Accept", "application/json");
   headers.set("X-Request-Id", requestId);
 
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      ...init,
-      headers,
-    });
-  } catch (e) {
-    // Automatic fallback: if backend isn't reachable, enable demo once and retry mock.
-    if (!didAutoEnableDemo) {
-      didAutoEnableDemo = true;
-      const { setDemoModeEnabled } = await import("@/lib/demo/mode");
-      setDemoModeEnabled(true);
-      const mock = await maybeMock<T>(path, init);
-      if (mock !== null) return mock;
-    }
-    throw e;
-  }
+  const res = await fetch(url, {
+    ...init,
+    headers,
+  });
 
   const data = await readJsonSafe(res);
 
